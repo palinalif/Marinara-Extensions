@@ -22,7 +22,79 @@ node sidecars/webfetch-proxy/server.mjs   # listens on 127.0.0.1:8791
 node scripts/selftest-proxy.mjs           # 13 checks, drives it with the Engine's request shape
 ```
 
-## Run it without a container (systemd)
+## Deployment by platform
+
+The proxy is one Node file, so it can run anywhere Node runs. What survives a reboot does not.
+
+| Platform | Durable shape |
+| --- | --- |
+| systemd host | `webfetch-proxy.service` (below) |
+| **Unraid** | a container on a shared Docker network (below) — host processes do not survive reboot |
+| pm2 / supervisord host | same file, registered with that supervisor |
+
+### Unraid (no systemd, RAM-based OS filesystem)
+
+Unraid extracts `bzroot` into a RAM filesystem and makes it `/`: `/root`, `/usr`, `/etc`, `/var`
+are volatile and rebuilt on every boot. Only `/mnt/user/*` (shares, incl. `appdata`) and
+`/boot/config/*` persist. So on Unraid:
+
+- there is no systemd, so a unit file is not an option;
+- a clone under `/opt` or `/root` **disappears at reboot**;
+- host `node` installed after boot is volatile too, so a host process is not a durable unit.
+
+On Unraid the durable, restart-safe unit is a container, and it needs no new host dependency:
+
+```sh
+# 1. Persistent source location (appdata survives reboot; /opt does not)
+mkdir -p /mnt/user/appdata/webfetch-proxy
+git clone https://github.com/palinalif/Marinara-Extensions \
+  /mnt/user/appdata/webfetch-proxy/Marinara-Extensions
+
+# 2. A user-defined network so containers can resolve each other by name.
+#    (The default `bridge` network has no per-container DNS.)
+docker network create marinara-net 2>/dev/null || true
+
+# 3. The proxy. No published port: it is reachable only from marinara-net.
+docker run -d --name webfetch-proxy \
+  --network marinara-net \
+  --restart unless-stopped \
+  -v /mnt/user/appdata/webfetch-proxy/Marinara-Extensions:/app:ro \
+  -e WEBFETCH_PROXY_HOST=0.0.0.0 \
+  -e WEBFETCH_PROXY_ALLOW_PUBLIC=1 \
+  -e WEBFETCH_PROXY_PORT=8791 \
+  -e WEBTOOLS_READER_BASE=https://r.jina.ai/ \
+  node:22-alpine node /app/sidecars/webfetch-proxy/server.mjs
+```
+
+`WEBFETCH_PROXY_HOST=0.0.0.0` + `WEBFETCH_PROXY_ALLOW_PUBLIC=1` is deliberate: inside a container
+loopback is unreachable from the Engine, so it must bind the container interface. Publishing **no**
+port keeps it off the host and LAN — the only clients are containers on `marinara-net`.
+
+Then attach the Engine to the same network and allow private webhook targets (recreate, not
+restart — `env_file` is read at container creation):
+
+```sh
+docker network connect marinara-net marinara   # if the Engine was created outside compose
+```
+
+```yaml
+services:
+  marinara:
+    networks: [marinara-net]
+    environment:
+      - WEBHOOK_LOCAL_URLS_ENABLED=1
+```
+
+Custom Tool webhook URL becomes `http://webfetch-proxy:8791/fetch` — container DNS, no
+`host.docker.internal`, no host port, no collision with the voice backend on 8090.
+
+Verify from the Engine container:
+
+```sh
+docker exec marinara sh -c 'wget -qO- http://webfetch-proxy:8791/health'
+```
+
+### systemd host
 
 ```sh
 sudo mkdir -p /opt/marinara-extensions
@@ -34,11 +106,9 @@ sudo systemctl enable --now webfetch-proxy
 systemctl status webfetch-proxy --no-pager
 ```
 
-Requires `node` on the host (Node 22+). If the host has no Node, the fallback is to run it inside
-the Engine container from the image entrypoint — that needs an image patch, which is why systemd is
-the recommended shape.
+Requires `node` on the host (Node 22+).
 
-## Let the Engine reach it
+## Let the Engine reach it (systemd-host shape)
 
 On Linux a container's `127.0.0.1` is the container, so give it the host gateway and allow private
 webhook targets (`isWebhookLocalUrlsEnabled`, `runtime-config.ts:704`):
@@ -63,7 +133,7 @@ Engine UI → **Custom Tools** → new tool:
 | Name | `web_fetch` (lowercase snake_case, required by `createCustomToolSchema`) |
 | Description | `Read any public URL as markdown (renders JavaScript pages, parses PDFs).` |
 | Execution type | `webhook` |
-| Webhook URL | `http://host.docker.internal:8791/fetch` |
+| Webhook URL | `http://webfetch-proxy:8791/fetch` (Unraid) · `http://host.docker.internal:8791/fetch` (systemd host) |
 | Parameters | JSON Schema below |
 | Enabled | on |
 
@@ -83,7 +153,9 @@ Then enable the tool for the agents that should have it.
 ## Verify
 
 ```sh
-curl -s http://127.0.0.1:8791/health
+curl -s http://127.0.0.1:8791/health   # systemd host
+# Unraid: no host port is published, so probe it from the Engine container instead:
+#   docker exec marinara sh -c 'wget -qO- http://webfetch-proxy:8791/health'
 curl -s -X POST -H 'content-type: application/json' \
   -d '{"tool":"web_fetch","arguments":{"url":"https://en.wikipedia.org/wiki/Artificial_intelligence"}}' \
   http://127.0.0.1:8791/fetch | head -c 300
