@@ -1,0 +1,131 @@
+# Marinara Extensions
+
+Marinara Engine **capability packages** that live outside the Engine repo, so Engine updates can
+never overwrite them. Built against the Engine's own package seam (`api.registerTool`), installed
+through the Engine's catalog UI.
+
+| Package | Gives the model | Backend |
+| --- | --- | --- |
+| [`webtools`](packages/webtools) | `webtools_web_fetch` — read any public URL as markdown | [Jina Reader](https://github.com/jina-ai/reader) (hosted, or self-hosted) |
+
+## Why packages and not Engine code
+
+Upstream has `web_search` (DuckDuckGo Lite, scraped inline in `tool-executor.ts`) and **no**
+`web_fetch`. The fork's `web_fetch` was Engine-internal code, which is why keeping it meant
+re-applying fork patches on every update.
+
+Capability packages are the opposite: they install into `DATA_DIR/capability-packages/`, ship as a
+signed-by-hash zip from a catalog, and are plain trusted in-process Node — so `fetch`, `dns`, and
+`process.env` all work. The Engine's scripted "custom tools" cannot do this: they run in QuickJS
+with no network bindings (`custom-tool-script.worker.ts:14-22`).
+
+## Layout
+
+```
+packages/<id>/manifest.json   Engine manifest (hash-pinned files)
+packages/<id>/server.mjs      server entrypoint (ESM, exports activate)
+scripts/build.mjs             builds dist/<id>-<version>.zip + dist/catalog.json
+scripts/selftest.mjs          runs the package under the Engine's real limits
+dist/                         publish these two files; the catalog points at them
+```
+
+## Publishing
+
+```sh
+node scripts/build.mjs --base-url https://raw.githubusercontent.com/<you>/<repo>/main/dist
+git add -A && git commit -m "webtools <version>" && git push
+```
+
+`build.mjs` regenerates `dist/catalog.json` from the same manifest object that goes inside the zip,
+which matters: the Engine refuses an artifact whose embedded manifest is not
+`JSON.stringify`-identical to the catalog entry.
+
+## Point the Engine at this catalog
+
+The Engine reads one catalog URL, overridable by env (`package-manager.service.ts:137`):
+
+```
+MARINARA_AGENT_CATALOG_URL=https://raw.githubusercontent.com/<you>/<repo>/main/dist/catalog.json
+```
+
+Put it in `DATA_DIR/.env` (that is `packages/server/data/.env` in Docker mode), restart, then
+install **Web Tools** in the Engine's capability-packages UI. No signing key is involved: the
+Engine verifies the zip's sha256 from the catalog and every file's sha256 from the manifest.
+
+**Hosting must be public-internet reachable.** Catalog and artifact downloads go through the
+Engine's `safeFetch`, which refuses private/loopback addresses — a `file://` path or a LAN URL
+will not install. A public GitHub repo (or a secret gist) works; a private repo does not, because
+`raw.githubusercontent.com` requires auth.
+
+## webtools
+
+Gives the model one tool, `webtools_web_fetch`:
+
+```
+webtools_web_fetch(url, max_chars?)  ->  { ok, url, title, publishedTime?, content, truncated?, chars }
+```
+
+- **Backend.** `https://r.jina.ai/` by default. Reader renders JavaScript pages, parses PDFs and
+  Office documents, and returns markdown — a plain `fetch` cannot do any of that.
+- **Self-host it** (no third party sees your URLs, no rate limit):
+  `docker run -d --name reader -p 127.0.0.1:8081:8081 ghcr.io/jina-ai/reader:oss`, then
+  `WEBTOOLS_READER_BASE=http://127.0.0.1:8081/`. Port 8081 is the HTTP/1.1 port; 8080 is h2c.
+- **SSRF guard.** Refuses loopback, RFC1918, link-local (incl. cloud metadata `169.254.169.254`),
+  IPv6 unique-local/link-local, CGNAT `100.64/10` (Tailscale), multicast/reserved, local mDNS
+  names, non-80/443 ports, embedded credentials, and hostnames that resolve to any of those.
+  Hostname verdicts are cached (5 min) so repeat reads of a site don't re-resolve.
+- **Deadline.** The Engine kills package tool handlers at 10 000 ms and reports a bare
+  `Tool webtools_web_fetch failed`. The handler races its own 8 000 ms wall-clock deadline
+  (`WEBTOOLS_TIMEOUT_MS`) and returns a readable error instead.
+- **Size.** The Engine caps a tool result at 64 KiB. Content is capped at 16 000 chars
+  (`WEBTOOLS_MAX_CHARS`, max 60 000) and the response stream stops as soon as the cap is reached.
+
+### Engine environment knobs
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `WEBTOOLS_READER_BASE` | `https://r.jina.ai/` | Reader service root |
+| `WEBTOOLS_READER_API_KEY` | — | Bearer token; raises the hosted rate limit (20 → 500 RPM) |
+| `WEBTOOLS_MAX_CHARS` | `16000` | Content cap per call |
+| `WEBTOOLS_TIMEOUT_MS` | `8000` | Handler budget, hard-capped below the Engine's 10 s |
+| `WEBTOOLS_NO_CACHE` | — | `1` asks the reader to bypass its cache |
+
+## Slow DNS is the thing that will make this feel broken
+
+Measured on this dev box, before fixing the container's resolver:
+
+| Resolver | `en.wikipedia.org` |
+| --- | --- |
+| router DNS `192.168.1.254` | **23 023 ms — ETIMEOUT** |
+| Docker embedded DNS `127.0.0.11` (forwards to the router first) | 6 005 ms |
+| container default `/etc/resolv.conf` | 9 990 ms |
+| `1.1.1.1` / `1.1.2.2` direct | **3–4 ms** |
+
+Docker builds the container's resolver from the host's, which lists the router first; the router
+does not answer, so every lookup pays a timeout before falling back. That is a ~4 s tax on the
+first read of every hostname, inside a 10 s handler budget.
+
+Fix it at the container, not in the package — add to the Engine's compose service:
+
+```yaml
+services:
+  marinara:
+    dns:
+      - 1.1.1.1
+      - 1.1.2.2
+```
+
+After that, measured end-to-end handler times were 0.3–3.1 s. The package caches hostname verdicts,
+which helps repeat reads; it cannot fix a resolver that takes seconds per lookup.
+
+## Tests
+
+```sh
+node scripts/selftest.mjs
+```
+
+36 checks: the registration contract (name/qualified-name/description/schema byte limits), 18 SSRF
+refusals plus public-host allowances, live reads (HTML, JS-rendered Reddit, a 240 KB arXiv PDF),
+structured-error paths, truncation, and `selfCheck`. It enforces the Engine's own numbers from
+`capability-tool-registry.service.ts` (10 s deadline, 64 KiB result, 8 KiB schema, 512-char
+description).

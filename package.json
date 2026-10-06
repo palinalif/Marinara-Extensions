@@ -1,0 +1,11 @@
+{
+  "name": "marinara-extensions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Marinara Engine capability packages that live outside the Engine repo.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "selftest": "node scripts/selftest.mjs"
+  }
+}

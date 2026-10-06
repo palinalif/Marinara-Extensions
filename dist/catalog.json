@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-06T15:11:11.219Z",
+  "packages": [
+    {
+      "manifest": {
+        "schemaVersion": 2,
+        "capabilityApi": {
+          "major": 1,
+          "minor": 19
+        },
+        "builtAgainst": {
+          "engineVersion": "2.4.6",
+          "engineCommit": "974faebb683842f5a31be34cee65394d9a47c336"
+        },
+        "id": "webtools",
+        "name": "Web Tools",
+        "version": "0.1.0",
+        "description": "Gives your agents a web_fetch tool: hand it a public https URL and it returns the page as readable markdown — articles, docs, forum posts, PDFs. Reads through a Reader service (https://r.jina.ai by default, or a self-hosted reader you point at with WEBTOOLS_READER_BASE), so JavaScript-rendered pages and PDFs come back as text. Long pages are truncated, logins are out of reach, and private/network-internal addresses are refused.",
+        "engine": {
+          "min": "2.4.6",
+          "maxExclusive": "4.0.0"
+        },
+        "kind": [
+          "agent"
+        ],
+        "entrypoints": {
+          "server": "server.mjs"
+        },
+        "files": [
+          {
+            "path": "server.mjs",
+            "sha256": "0bcf882784b10570252292e15353e0e3f11f8143e10625ea0a85c1afcb6d7099",
+            "bytes": 17158
+          }
+        ],
+        "permissions": [
+          "tools"
+        ],
+        "restartRequired": false
+      },
+      "category": "misc",
+      "artifact": {
+        "url": "https://raw.githubusercontent.com/palinalif/Marinara-Extensions/main/dist/webtools-0.1.0.zip",
+        "sha256": "391f3dced4b92cf2255e5c7b3a852d6b8d0175dc66adf81f9fdd16563a29c854",
+        "bytes": 6983
+      },
+      "documentationUrl": "https://github.com/palinalif/Marinara-Extensions/tree/main/packages/webtools"
+    }
+  ]
+}
