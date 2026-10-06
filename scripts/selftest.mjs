@@ -96,18 +96,44 @@ async function callHandler(args) {
 const live = [
   ["https://example.com/", null],
   ["https://en.wikipedia.org/wiki/Artificial_intelligence", "Artificial intelligence"],
-  ["https://www.reddit.com/r/LocalLLaMA/", null],
+  // The /js/ variant serves an empty shell and renders its quotes only via JavaScript, so a
+  // successful read here is evidence the backend really renders pages (a plain fetch gets nothing).
+  ["https://quotes.toscrape.com/js/", "Harry"],
   ["https://arxiv.org/pdf/2005.14165", null],
 ];
 for (const [url, expectIn] of live) {
-  const { result, serialized, ms } = await callHandler({ url });
+  // The shared public reader queues under load and occasionally answers with a stub (measured:
+  // 343 chars and no title for reddit). One retry keeps this asserting our behaviour rather than
+  // the public service's mood, while a genuinely broken read still fails twice.
+  let attempt = await callHandler({ url });
+  let retries = 0;
+  while (retries < 2 && !(attempt.result?.ok === true && (attempt.result?.content?.length ?? 0) > 100 && attempt.result?.title?.length > 2)) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    attempt = await callHandler({ url });
+    retries += 1;
+  }
+  const { result, serialized, ms } = attempt;
   const bytes = Buffer.byteLength(serialized, "utf8");
   const content = result?.content || "";
   const titleOk = result?.title?.length > 2;
   const ok = result?.ok === true && content.length > 100 && bytes <= MAX_RESULT_BYTES && ms < HANDLER_TIMEOUT_MS;
   const contentOk = expectIn ? content.includes(expectIn) : true;
-  check(`reads ${new URL(url).hostname}`, ok && contentOk && titleOk, `${ms}ms, ${content.length} chars, ${bytes} B result, title="${result?.title}"`);
+  check(`reads ${new URL(url).hostname}`, ok && contentOk && titleOk, `${ms}ms, ${content.length} chars, ${bytes} B result, title="${result?.title}"${retries ? `, after ${retries} retry` : ""}`);
 }
+
+/* -- 3b. hostile sites surface a readable notice, never a silent empty result --- */
+
+// Reddit blocks the shared public reader's IP (measured: 403 "You've been blocked by network
+// security"). That is a property of the shared service, not of this tool: the contract is that the
+// model gets the notice and can pick another source. Self-hosting the reader is the fix for the
+// block itself. Asserts the notice is surfaced, and passes on a genuine read too.
+const hostile = await callHandler({ url: "https://www.reddit.com/r/LocalLLaMA/" });
+const hostileText = hostile.result?.content ?? "";
+check(
+  "hostile site yields a readable notice, not a silent empty result",
+  hostile.result?.ok === true && hostileText.length > 40 && /block|log in|login/i.test(hostileText),
+  `${hostileText.length} chars: ${hostileText.slice(0, 60).replace(/\s+/g, " ")}`,
+);
 
 /* -- 4. failure paths return structured errors, never throw -------------------- */
 

@@ -6,6 +6,8 @@
   "description": "Marinara Engine capability packages that live outside the Engine repo.",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "selftest": "node scripts/selftest.mjs"
+    "selftest": "node scripts/selftest.mjs",
+    "selftest:proxy": "node scripts/selftest-proxy.mjs",
+    "proxy": "node sidecars/webfetch-proxy/server.mjs"
   }
 }

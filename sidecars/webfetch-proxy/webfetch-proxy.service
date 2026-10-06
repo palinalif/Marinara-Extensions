@@ -1,0 +1,35 @@
+[Unit]
+Description=Marinara Engine web_fetch webhook proxy
+Documentation=https://github.com/palinalif/Marinara-Extensions/tree/main/sidecars/webfetch-proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The Engine reaches this over the host gateway, so it must survive Engine restarts.
+User=marinara
+Group=marinara
+WorkingDirectory=/opt/marinara-extensions/sidecars/webfetch-proxy
+ExecStart=/usr/bin/node server.mjs
+Restart=always
+RestartSec=3
+
+Environment=WEBFETCH_PROXY_HOST=127.0.0.1
+Environment=WEBFETCH_PROXY_PORT=8090
+Environment=WEBFETCH_PROXY_TIMEOUT_MS=20000
+Environment=WEBFETCH_PROXY_MAX_CHARS=16000
+Environment=WEBTOOLS_READER_BASE=https://r.jina.ai/
+# Free key raises the hosted reader's rate limit from 20 to 500 requests/minute.
+# Environment=WEBTOOLS_READER_API_KEY=
+
+# This is a fetch relay: keep it loopback-only and cheap to contain.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=256M
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

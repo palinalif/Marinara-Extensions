@@ -8,6 +8,18 @@ through the Engine's catalog UI.
 | --- | --- | --- |
 | [`webtools`](packages/webtools) | `webtools_web_fetch` — read any public URL as markdown | [Jina Reader](https://github.com/jina-ai/reader) (hosted, or self-hosted) |
 
+`web_fetch` ships in two shapes, sharing one implementation:
+
+| | capability package | [webfetch-proxy](sidecars/webfetch-proxy) sidecar |
+| --- | --- | --- |
+| Engine feature | capability packages + catalog | Custom Tools, `executionType: "webhook"` |
+| model-facing name | `webtools_web_fetch` | **`web_fetch`** |
+| needs catalog override | yes (published additively, see below) | **no** |
+| needs Engine restart | yes (`env_file`) | **no** |
+| extra process | none | one loopback Node service (systemd, **no container**) |
+| tool budget | 10 s handler deadline | **60 s** (`DEFAULT_CUSTOM_TOOL_TIMEOUT_MS`) |
+| tests | `scripts/selftest.mjs` 37/37 | `scripts/selftest-proxy.mjs` 13/13 |
+
 ## Why packages and not Engine code
 
 Upstream has `web_search` (DuckDuckGo Lite, scraped inline in `tool-executor.ts`) and **no**
@@ -24,8 +36,11 @@ with no network bindings (`custom-tool-script.worker.ts:14-22`).
 ```
 packages/<id>/manifest.json   Engine manifest (hash-pinned files)
 packages/<id>/server.mjs      server entrypoint (ESM, exports activate)
+sidecars/<name>/server.mjs    standalone webhook service (imports the package module)
 scripts/build.mjs             builds dist/<id>-<version>.zip + dist/catalog.json
 scripts/selftest.mjs          runs the package under the Engine's real limits
+scripts/selftest-proxy.mjs    drives the sidecar with the Engine's webhook request shape
+scripts/verify-package.mjs    validates dist/ with the Engine's own schemas
 dist/                         publish these two files; the catalog points at them
 ```
 
@@ -141,7 +156,9 @@ which helps repeat reads; it cannot fix a resolver that takes seconds per lookup
 ## Tests
 
 ```sh
-node scripts/selftest.mjs
+node scripts/selftest.mjs        # 37 checks
+node scripts/selftest-proxy.mjs  # 13 checks
+node scripts/verify-package.mjs  # 10 checks, Engine's own validators
 ```
 
 36 checks: the registration contract (name/qualified-name/description/schema byte limits), 18 SSRF
