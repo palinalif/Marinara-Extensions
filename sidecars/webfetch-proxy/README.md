@@ -45,16 +45,14 @@ are volatile and rebuilt on every boot. Only `/mnt/user/*` (shares, incl. `appda
 On Unraid the durable, restart-safe unit is a container, and it needs no new host dependency:
 
 ```sh
-# 1. Persistent source location (appdata survives reboot; /opt does not)
-mkdir -p /mnt/user/appdata/webfetch-proxy
-git clone https://github.com/palinalif/Marinara-Extensions \
-  /mnt/user/appdata/webfetch-proxy/Marinara-Extensions
+# 1. Persistent source. Unraid has no git by default, so pull the tarball.
+mkdir -p /mnt/user/appdata/webfetch-proxy/Marinara-Extensions
+curl -fsSL https://github.com/palinalif/Marinara-Extensions/archive/refs/heads/main.tar.gz \
+  | tar xz -C /mnt/user/appdata/webfetch-proxy/Marinara-Extensions --strip-components=1
 
-# 2. A user-defined network so containers can resolve each other by name.
-#    (The default `bridge` network has no per-container DNS.)
-docker network create marinara-net 2>/dev/null || true
-
-# 3. The proxy. No published port: it is reachable only from marinara-net.
+# 2. The proxy, on the Engine's existing user-defined network. No published port: it is
+#    reachable only from that network. (The default `bridge` has no per-container DNS;
+#    a user-defined network resolves container names.)
 docker run -d --name webfetch-proxy \
   --network marinara-net \
   --restart unless-stopped \
@@ -63,24 +61,29 @@ docker run -d --name webfetch-proxy \
   -e WEBFETCH_PROXY_ALLOW_PUBLIC=1 \
   -e WEBFETCH_PROXY_PORT=8791 \
   -e WEBTOOLS_READER_BASE=https://r.jina.ai/ \
+  --health-cmd 'wget -qO- http://127.0.0.1:8791/health >/dev/null || exit 1' \
+  --health-interval 60s --health-timeout 5s --health-retries 3 \
   node:22-alpine node /app/sidecars/webfetch-proxy/server.mjs
+
+# 3. Prove it from inside the Engine container (container DNS, no host port involved)
+docker logs --tail=5 webfetch-proxy
+docker exec marinara sh -c 'wget -qO- http://webfetch-proxy:8791/health'
 ```
+
+To update later, re-run step 1 and `docker restart webfetch-proxy`.
 
 `WEBFETCH_PROXY_HOST=0.0.0.0` + `WEBFETCH_PROXY_ALLOW_PUBLIC=1` is deliberate: inside a container
 loopback is unreachable from the Engine, so it must bind the container interface. Publishing **no**
 port keeps it off the host and LAN — the only clients are containers on `marinara-net`.
 
-Then attach the Engine to the same network and allow private webhook targets (recreate, not
-restart — `env_file` is read at container creation):
-
-```sh
-docker network connect marinara-net marinara   # if the Engine was created outside compose
-```
+Then allow private webhook targets on the Engine. On Unraid that is the Docker tab → `marinara` →
+Edit → add an environment variable `WEBHOOK_LOCAL_URLS_ENABLED=1` → **Apply**, which recreates the
+container. (With compose it is the same recreate: `env_file` is read at container creation, so a
+plain restart does not pick it up.)
 
 ```yaml
 services:
   marinara:
-    networks: [marinara-net]
     environment:
       - WEBHOOK_LOCAL_URLS_ENABLED=1
 ```
