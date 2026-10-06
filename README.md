@@ -8,6 +8,10 @@ through the Engine's catalog UI.
 | --- | --- | --- |
 | [`webtools`](packages/webtools) | `webtools_web_fetch` — read any public URL as markdown | [Jina Reader](https://github.com/jina-ai/reader) (hosted, or self-hosted) |
 
+| Tool | Gives you | Backend |
+| --- | --- | --- |
+| [`add-voice`](tools/add-voice) | enrolled TTS voices for the stock voice picker | VoxCPM2 (`voxcpm2-server`) |
+
 `web_fetch` ships in two shapes, sharing one implementation:
 
 | | capability package | [webfetch-proxy](sidecars/webfetch-proxy) sidecar |
@@ -41,8 +45,14 @@ scripts/build.mjs             builds dist/<id>-<version>.zip + dist/catalog.json
 scripts/selftest.mjs          runs the package under the Engine's real limits
 scripts/selftest-proxy.mjs    drives the sidecar with the Engine's webhook request shape
 scripts/verify-package.mjs    validates dist/ with the Engine's own schemas
+tools/<name>/                 host-side helpers that are not Engine code (see below)
 dist/                         publish these two files; the catalog points at them
 ```
+
+`tools/add-voice` is deliberately **not** a package. VoxCPM2 resolves `voice` to a
+directory scan (`/voices/<id>/reference.wav`), so enrolling a voice is a filesystem
+write on the host; a package would add a manifest, a route prefix, a panel and a
+restart cycle to do that write. See [`tools/add-voice/README.md`](tools/add-voice/README.md).
 
 ## The catalog is additive — official packages keep updating
 
