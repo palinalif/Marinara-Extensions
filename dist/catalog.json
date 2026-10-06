@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-06T17:25:19.997Z",
+  "generatedAt": "2026-10-06T17:34:00.345Z",
   "packages": [
     {
       "manifest": {
@@ -3831,7 +3831,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/palinalif/Marinara-Extensions/main/dist/webtools-0.1.0.zip",
-        "sha256": "7f60729b678e101beb1eebabe7ab6bcb3c279012da994a13a00f69d8ba2e2c64",
+        "sha256": "e33c18a60667d6da71486e95964836cf6931b2097e6c12584abe9e0fb5674b73",
         "bytes": 6983
       },
       "documentationUrl": "https://github.com/palinalif/Marinara-Extensions/tree/main/packages/webtools"
