@@ -15,7 +15,7 @@ Restart=always
 RestartSec=3
 
 Environment=WEBFETCH_PROXY_HOST=127.0.0.1
-Environment=WEBFETCH_PROXY_PORT=8090
+Environment=WEBFETCH_PROXY_PORT=8791
 Environment=WEBFETCH_PROXY_TIMEOUT_MS=20000
 Environment=WEBFETCH_PROXY_MAX_CHARS=16000
 Environment=WEBTOOLS_READER_BASE=https://r.jina.ai/

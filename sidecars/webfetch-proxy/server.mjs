@@ -14,9 +14,9 @@
  *
  * Deployment (pick one, neither needs a new container):
  *   A. inside the Engine container, launched by the image entrypoint  -> WEBHOOK URL
- *      http://127.0.0.1:8090/
+ *      http://127.0.0.1:8791/
  *   B. systemd on the host, Engine reaches it via extra_hosts host.docker.internal
- *      -> http://host.docker.internal:8090/
+ *      -> http://host.docker.internal:8791/
  * Both need WEBHOOK_LOCAL_URLS_ENABLED=1 (runtime-config.ts:704), because the webhook target is
  * a private address and safeFetch's default policy is https-only.
  *
@@ -30,7 +30,7 @@ import { createServer } from "node:http";
 import { readUrl } from "../../packages/webtools/server.mjs";
 
 const HOST = process.env.WEBFETCH_PROXY_HOST ?? "127.0.0.1";
-const PORT = Number(process.env.WEBFETCH_PROXY_PORT ?? 8090);
+const PORT = Number(process.env.WEBFETCH_PROXY_PORT ?? 8791);
 // The Engine's own custom-tool budget is 60s (DEFAULT_CUSTOM_TOOL_TIMEOUT_MS), 6x the capability-
 // package handler deadline, so this proxy can afford a slower reader than the package allows.
 const TIMEOUT_MS = Number(process.env.WEBFETCH_PROXY_TIMEOUT_MS ?? 20_000);
@@ -139,6 +139,20 @@ if (HOST !== "127.0.0.1" && HOST !== "localhost" && HOST !== "::1") {
 
 server.listen(PORT, HOST, () => {
   log(`webfetch-proxy listening on http://${HOST}:${PORT}/ reader=${process.env.WEBTOOLS_READER_BASE ?? "https://r.jina.ai/"}`);
+});
+
+/* A silent crash here is the worst outcome: systemd restarts the unit, the Engine keeps pointing at
+ * a port owned by something else, and every web_fetch call fails with a bare "tool failed". Say so
+ * in the log, in the first line a journalctl reader sees. */
+server.on("error", (error) => {
+  if (error?.code === "EADDRINUSE") {
+    console.error(
+      `webfetch-proxy cannot start: ${HOST}:${PORT} is already in use by another service. Pick a free port (ss -ltnp) and set WEBFETCH_PROXY_PORT.`,
+    );
+  } else {
+    console.error(`webfetch-proxy listen failed: ${error?.message ?? String(error)}`);
+  }
+  process.exit(1);
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {

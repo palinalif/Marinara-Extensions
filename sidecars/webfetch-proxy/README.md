@@ -18,7 +18,7 @@ cap and the deadline are imported from `../../packages/webtools/server.mjs`, so 
 proxy cannot drift.
 
 ```sh
-node sidecars/webfetch-proxy/server.mjs   # listens on 127.0.0.1:8090
+node sidecars/webfetch-proxy/server.mjs   # listens on 127.0.0.1:8791
 node scripts/selftest-proxy.mjs           # 13 checks, drives it with the Engine's request shape
 ```
 
@@ -63,7 +63,7 @@ Engine UI → **Custom Tools** → new tool:
 | Name | `web_fetch` (lowercase snake_case, required by `createCustomToolSchema`) |
 | Description | `Read any public URL as markdown (renders JavaScript pages, parses PDFs).` |
 | Execution type | `webhook` |
-| Webhook URL | `http://host.docker.internal:8090/fetch` |
+| Webhook URL | `http://host.docker.internal:8791/fetch` |
 | Parameters | JSON Schema below |
 | Enabled | on |
 
@@ -83,10 +83,10 @@ Then enable the tool for the agents that should have it.
 ## Verify
 
 ```sh
-curl -s http://127.0.0.1:8090/health
+curl -s http://127.0.0.1:8791/health
 curl -s -X POST -H 'content-type: application/json' \
   -d '{"tool":"web_fetch","arguments":{"url":"https://en.wikipedia.org/wiki/Artificial_intelligence"}}' \
-  http://127.0.0.1:8090/fetch | head -c 300
+  http://127.0.0.1:8791/fetch | head -c 300
 ```
 
 Then in a chat: *"fetch https://en.wikipedia.org/wiki/Artificial_intelligence and summarize it"*.
@@ -105,7 +105,7 @@ Then in a chat: *"fetch https://en.wikipedia.org/wiki/Artificial_intelligence an
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `WEBFETCH_PROXY_HOST` | `127.0.0.1` | Bind address. Anything else needs `WEBFETCH_PROXY_ALLOW_PUBLIC=1` |
-| `WEBFETCH_PROXY_PORT` | `8090` | Port |
+| `WEBFETCH_PROXY_PORT` | `8791` | Port. Chosen outside the 80xx range this box's voice/LLM services use — check `ss -ltnp` and pick another if taken |
 | `WEBFETCH_PROXY_TIMEOUT_MS` | `20000` | Per-request budget (Engine allows 60 s) |
 | `WEBFETCH_PROXY_MAX_CHARS` | `16000` | Default content cap |
 | `WEBTOOLS_READER_BASE` | `https://r.jina.ai/` | Reader service root |
