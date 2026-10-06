@@ -11,6 +11,7 @@ through the Engine's catalog UI.
 | Tool | Gives you | Backend |
 | --- | --- | --- |
 | [`add-voice`](tools/add-voice) | enrolled TTS voices for the stock voice picker | VoxCPM2 (`voxcpm2-server`) |
+| [`set-tts`](tools/set-tts) | the VoxCPM2 connection itself, verified by a real spoken line | the Engine's own `PUT /api/tts/config` |
 
 `web_fetch` ships in two shapes, sharing one implementation:
 
@@ -53,6 +54,9 @@ dist/                         publish these two files; the catalog points at the
 directory scan (`/voices/<id>/reference.wav`), so enrolling a voice is a filesystem
 write on the host; a package would add a manifest, a route prefix, a panel and a
 restart cycle to do that write. See [`tools/add-voice/README.md`](tools/add-voice/README.md).
+
+`tools/set-tts` is not a package for the same reason: the Engine already has a validated
+endpoint for its own TTS settings, and loopback calls to it need no credentials.
 
 ## The catalog is additive — official packages keep updating
 
