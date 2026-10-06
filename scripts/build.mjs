@@ -82,21 +82,48 @@ with zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED) as z:
 ]);
 
 const artifactBytes = readFileSync(artifactPath);
+const ourEntry = {
+  manifest,
+  category: "misc",
+  artifact: {
+    url: `${ARTIFACT_BASE}/${artifactName}`,
+    sha256: createHash("sha256").update(artifactBytes).digest("hex"),
+    bytes: artifactBytes.byteLength,
+  },
+  documentationUrl: "https://github.com/palinalif/Marinara-Extensions/tree/main/packages/webtools",
+};
+
+// The Engine treats MARINARA_AGENT_CATALOG_URL as the WHOLE catalog
+// (package-manager.service.ts: "An explicit override IS the whole catalog"), so pointing it
+// here must not cost the official package list. We publish an ADDITIVE catalog: the official
+// entries verbatim, plus ours. Re-running this build re-syncs official updates.
+const OFFICIAL_CATALOG =
+  process.env.OFFICIAL_CATALOG_URL ?? "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/catalog/catalog.json";
+const OFFICIAL_CATALOG_LOCAL = join(distDir, "official-catalog.json");
+
+let officialPackages = [];
+try {
+  const response = await fetch(OFFICIAL_CATALOG, { headers: { accept: "application/json" } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  officialPackages = (await response.json()).packages;
+  writeFileSync(OFFICIAL_CATALOG_LOCAL, JSON.stringify({ packages: officialPackages }, null, 2));
+} catch (error) {
+  // Offline build: reuse the last official snapshot so the published catalog never loses
+  // official entries. Losing them is the failure mode this merge exists to prevent.
+  const fallback = readFileSync(OFFICIAL_CATALOG_LOCAL, "utf8");
+  officialPackages = JSON.parse(fallback).packages;
+  console.log(`official catalog fetch failed (${error.message}); reusing the committed snapshot`);
+}
+
+const merged = [...officialPackages, ourEntry].filter(
+  (entry, index, all) => all.findIndex((other) => other.manifest.id === entry.manifest.id) === index,
+);
+
 const catalog = {
   schemaVersion: 1,
   generatedAt: new Date().toISOString(),
-  packages: [
-    {
-      manifest,
-      category: "misc",
-      artifact: {
-        url: `${ARTIFACT_BASE}/${artifactName}`,
-        sha256: createHash("sha256").update(artifactBytes).digest("hex"),
-        bytes: artifactBytes.byteLength,
-      },
-      documentationUrl: "https://github.com/palinalif/Marinara-Extensions/tree/main/packages/webtools",
-    },
-  ],
+  packages: merged,
+  provenance: { kind: "custom", url: "https://github.com/palinalif/Marinara-Extensions" },
 };
 
 writeFileSync(join(distDir, "catalog.json"), JSON.stringify(catalog, null, 2));
@@ -104,5 +131,5 @@ writeFileSync(join(distDir, "catalog.json"), JSON.stringify(catalog, null, 2));
 console.log(`built  ${artifactName}  ${artifactBytes.byteLength} bytes`);
 console.log(`server.mjs sha256 ${files[0].sha256} (${files[0].bytes} bytes)`);
 console.log(`artifact sha256 ${catalog.packages[0].artifact.sha256}`);
-console.log(`catalog  ${join(distDir, "catalog.json")}`);
+console.log(`catalog  ${join(distDir, "catalog.json")}  (${merged.length} packages: ${officialPackages.length} official + 1 ours)`);
 console.log(`artifact url ${catalog.packages[0].artifact.url}`);

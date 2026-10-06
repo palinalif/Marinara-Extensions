@@ -1,0 +1,34 @@
+name: Build and sync catalog
+# The Engine treats MARINARA_AGENT_CATALOG_URL as the whole catalog, so dist/catalog.json is
+# published additively: official entries fetched from Pasta-Devs/Marinara-Agents, plus ours.
+# This job re-runs the merge so official packages keep updating in place.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["packages/**", "scripts/**", "package.json"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build package + additive catalog
+        run: node scripts/build.mjs
+      - name: Self-test the package
+        run: node scripts/selftest.mjs
+      - name: Commit dist
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/
+          git diff --staged --quiet || git commit -m "chore(dist): rebuild $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push

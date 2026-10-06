@@ -25,7 +25,9 @@ const root = resolve(import.meta.dirname, "..");
 const version = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")).version;
 const zipPath = resolve(root, `dist/webtools-${version}.zip`);
 const catalog = JSON.parse(readFileSync(resolve(root, "dist/catalog.json"), "utf8"));
-const entry = catalog.packages[0];
+// The published catalog is additive (official entries first), so locate our entry by id.
+const entry = catalog.packages.find((candidate) => candidate.manifest.id === "webtools");
+if (!entry) throw new Error("webtools entry missing from dist/catalog.json");
 
 const results = [];
 const check = (name, fn) => {
@@ -104,7 +106,7 @@ check("server entrypoint is declared and present", () => {
 });
 
 check("catalog URL override resolves (MARINARA_AGENT_CATALOG_URL shape)", () => {
-  const url = resolveCapabilityCatalogUrl("2.4.6", entry.manifest.id === "webtools" ? catalog.packages[0].documentationUrl : undefined);
+  const url = resolveCapabilityCatalogUrl("2.4.6", entry.documentationUrl);
   return typeof url === "string" && url.length > 0 ? "ok" : "no url";
 });
 

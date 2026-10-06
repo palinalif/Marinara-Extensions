@@ -29,6 +29,26 @@ scripts/selftest.mjs          runs the package under the Engine's real limits
 dist/                         publish these two files; the catalog points at them
 ```
 
+## The catalog is additive — official packages keep updating
+
+The Engine treats `MARINARA_AGENT_CATALOG_URL` as **the whole catalog**
+(`package-manager.service.ts`: "An explicit override IS the whole catalog"), and `POST
+/api/capability-packages/:id/install` only installs ids present in that one document. So pointing
+the Engine here must not cost the official list.
+
+`dist/catalog.json` is therefore published **additively**: the 39 official entries copied verbatim
+from `Pasta-Devs/Marinara-Agents`, plus ours. `scripts/build.mjs` fetches the official catalog at
+build time (falling back to the committed `dist/official-catalog.json` snapshot when offline, so a
+build can never *lose* official entries), and `.github/workflows/sync-catalog.yml` re-runs the
+merge daily so official updates keep flowing. A catalog entry may be `schemaVersion: 1` (official)
+or `2` (ours) in the same document — `capabilityCatalogPackageSchema` accepts both, and an entry
+this Engine cannot parse is dropped individually rather than failing the document.
+
+The UI's **Import agents** dialog is not an alternative: it takes `importAgentConfigSchema` — agent
+config JSON files, an agent folder, or a Game Mode ruleset file — plus `approvedCapabilities`, which
+are runtime permissions (`create_characters`, `edit_lorebooks`, …). It carries no server-side code,
+so it cannot deliver a tool that needs `fetch`.
+
 ## Publishing
 
 ```sh
